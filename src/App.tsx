@@ -21,7 +21,7 @@ import {
 
 // Firebase Imports
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously} from "firebase/auth";
+import { getAuth, signInAnonymously } from "firebase/auth";
 import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 
 // --- Configuration ---
@@ -41,7 +41,6 @@ const db = getFirestore(app);
 const appId = "kanu-fit-v1"; 
 
 // CRITICAL: Fixed User ID to ensure data persistence across sessions/deployments
-// Since this is for one user only, we use a constant string to map all data.
 const FIXED_USER_ID = "kanu_primary_user"; 
 
 // --- Types ---
@@ -175,7 +174,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // We sign in anonymously to satisfy security rules, but use a fixed path for storage
     signInAnonymously(auth).then(() => {
         setIsConnected(true);
         setUser(true);
@@ -184,8 +182,6 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    
-    // FETCH DATA: Using FIXED_USER_ID ensures that "Kanu" sees the same data everywhere.
     const logsQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), orderBy('date', 'desc'));
     const unsubLogs = onSnapshot(logsQuery, (snap) => {
       setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutLog)));
@@ -291,7 +287,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative px-6 font-sans text-slate-200 overflow-x-hidden selection:bg-indigo-500/30">
+    <div className="min-h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative px-6 font-sans text-slate-200 overflow-x-hidden selection:bg-indigo-500/30 flex flex-col">
       {/* Background Decor */}
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none -z-10">
         <div className="absolute top-[-10%] right-[-20%] w-[300px] h-[300px] bg-indigo-900/20 rounded-full blur-[120px]" />
@@ -299,11 +295,11 @@ export default function App() {
       </div>
 
       {/* Main Content Area */}
-      <div className="pt-12 pb-10">
+      <div className="flex-1 overflow-y-auto pt-12 pb-10">
         {view === 'dashboard' && <Dashboard />}
         
         {view === 'log_workout' && !activeTemplate && (
-          <div className="space-y-8 animate-in slide-in-from-left-6 duration-400">
+          <div className="space-y-8 animate-in slide-in-from-left-6 duration-400 pb-20">
               <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
               <div>
                 <h2 className="text-4xl font-black text-white tracking-tighter">Workouts</h2>
@@ -329,7 +325,7 @@ export default function App() {
         )}
 
         {activeTemplate && (
-            <div className="space-y-10 animate-in fade-in slide-in-from-bottom-12 duration-500">
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-12 duration-500 pb-24">
                 <div className="flex justify-between items-center">
                   <IconButton icon={ArrowLeft} onClick={() => setActiveTemplate(null)} />
                   <h2 className="font-black text-white tracking-tight text-xl">{activeTemplate.name}</h2>
@@ -349,52 +345,52 @@ export default function App() {
                   >FINISH</button>
                 </div>
 
-                <div className="text-center space-y-6 py-10 relative">
+                <div className="text-center space-y-4 py-6 relative">
                     <div className="absolute inset-0 bg-indigo-500/5 blur-[100px] -z-10" />
-                    <div className={`mx-auto w-32 h-32 ${activeTemplate.color} rounded-[44px] flex items-center justify-center shadow-2xl border-4 border-white/10 text-white`}>
-                      <activeTemplate.icon size={56} />
+                    <div className={`mx-auto w-24 h-24 ${activeTemplate.color} rounded-[36px] flex items-center justify-center shadow-2xl border-4 border-white/10 text-white`}>
+                      <activeTemplate.icon size={44} />
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <p className="text-indigo-400 font-black uppercase tracking-[0.3em] text-[10px]">Active Session</p>
-                      <h3 className="text-4xl font-black text-white tracking-tighter leading-none">{activeTemplate.name}</h3>
+                      <h3 className="text-3xl font-black text-white tracking-tighter leading-none">{activeTemplate.name}</h3>
                     </div>
                 </div>
 
                 {activeTemplate.exercises ? (
                     <div className="space-y-4">
                       {activeTemplate.exercises.map(ex => (
-                        <GlassCard key={ex.id} className="border-white/10 py-7">
-                          <h4 className="text-2xl font-black text-white tracking-tighter mb-6">{ex.name}</h4>
+                        <GlassCard key={ex.id} className="border-white/10 py-5">
+                          <h4 className="text-xl font-black text-white tracking-tighter mb-4">{ex.name}</h4>
                           <div className="flex items-center justify-between px-2">
-                            <div className="space-y-1.5">
-                              <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Sets</p>
-                              <p className="text-2xl font-black text-white">{ex.sets}</p>
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sets</p>
+                              <p className="text-xl font-black text-white">{ex.sets}</p>
                             </div>
-                            <div className="w-px h-10 bg-slate-800" />
-                            <div className="space-y-1.5 text-center">
-                              <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Target</p>
-                              <p className="text-2xl font-black text-white">{ex.reps}</p>
+                            <div className="w-px h-8 bg-slate-800" />
+                            <div className="space-y-1 text-center">
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Target</p>
+                              <p className="text-xl font-black text-white">{ex.reps}</p>
                             </div>
-                            <div className="w-px h-10 bg-slate-800" />
-                            <div className="space-y-1.5 text-right">
-                              <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Rest</p>
-                              <p className="text-2xl font-black text-white">{ex.rest}</p>
+                            <div className="w-px h-8 bg-slate-800" />
+                            <div className="space-y-1 text-right">
+                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rest</p>
+                              <p className="text-xl font-black text-white">{ex.rest}</p>
                             </div>
                           </div>
                         </GlassCard>
                       ))}
                     </div>
                 ) : (
-                  <GlassCard className="text-center py-20">
-                     <Activity size={64} className="mx-auto text-slate-800 mb-6 opacity-40" />
-                     <p className="text-slate-400 font-black text-xl tracking-tight">Focus on your breathing.</p>
+                  <GlassCard className="text-center py-16">
+                     <Activity size={48} className="mx-auto text-slate-800 mb-4 opacity-40" />
+                     <p className="text-slate-400 font-black text-lg tracking-tight">Focus on your breathing.</p>
                   </GlassCard>
                 )}
             </div>
         )}
 
         {view === 'history' && (
-            <div className="space-y-8 animate-in slide-in-from-right-6 duration-400">
+            <div className="space-y-8 animate-in slide-in-from-right-6 duration-400 pb-20">
                  <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
                  <h2 className="text-4xl font-black text-white tracking-tighter">Journal</h2>
                  
@@ -410,10 +406,10 @@ export default function App() {
                       {logs.map(log => (
                           <GlassCard key={log.id} className="flex justify-between items-center py-6 border-white/5">
                               <div className="flex items-center gap-5">
-                                  <div className="w-2.5 h-14 bg-gradient-to-b from-indigo-500 to-indigo-700 rounded-full shadow-[0_0_20px_rgba(79,70,229,0.4)]" />
+                                  <div className="w-2.5 h-12 bg-gradient-to-b from-indigo-500 to-indigo-700 rounded-full shadow-[0_0_20px_rgba(79,70,229,0.4)]" />
                                   <div>
-                                      <p className="text-xl font-black text-white tracking-tight leading-tight">{log.templateName}</p>
-                                      <p className="text-[11px] font-black text-slate-500 uppercase tracking-[0.15em] mt-1.5 opacity-60">
+                                      <p className="text-lg font-black text-white tracking-tight leading-tight">{log.templateName}</p>
+                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mt-1 opacity-60">
                                         {new Date(log.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                                       </p>
                                   </div>
@@ -437,7 +433,7 @@ export default function App() {
         )}
 
         {view === 'log_weight' && (
-            <div className="space-y-16 pt-4 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-400">
+            <div className="space-y-16 pt-4 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-400 h-full">
                  <div className="w-full flex justify-start">
                   <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
                  </div>
@@ -465,7 +461,7 @@ export default function App() {
                     </div>
                  </div>
 
-                 <div className="w-full mt-auto pb-safe">
+                 <div className="w-full mt-auto pb-10">
                    <PrimaryButton onClick={async () => {
                        const val = (document.getElementById('weight-input') as HTMLInputElement).value;
                        if (!val) return;
@@ -481,7 +477,7 @@ export default function App() {
             </div>
         )}
       </div>
-      <div className="h-[env(safe-area-inset-bottom)] w-full" />
+      <div className="h-[env(safe-area-inset-bottom)] min-h-[20px] w-full" />
     </div>
   );
 }
