@@ -21,7 +21,7 @@ import {
 
 // Firebase Imports
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, type User } from "firebase/auth";
+import { getAuth, signInAnonymously} from "firebase/auth";
 import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 
 // --- Configuration ---
