@@ -2,9 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Dumbbell, 
   Activity, 
-  Heart, 
   Scale, 
-  TrendingUp, 
   Calendar, 
   Plus, 
   ChevronRight, 
@@ -16,13 +14,15 @@ import {
   Wifi,
   WifiOff,
   Sparkles,
-  type LucideProps
+  type LucideProps,
+  Timer,
+  Save
 } from 'lucide-react';
 
 // Firebase Imports
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot, query, orderBy } from "firebase/firestore";
+import { getFirestore, collection, doc, addDoc, deleteDoc, onSnapshot, query, orderBy, setDoc } from "firebase/firestore";
 
 // --- Configuration ---
 
@@ -40,7 +40,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "kanu-fit-v1"; 
 
-// CRITICAL: Fixed User ID to ensure data persistence across sessions/deployments
 const FIXED_USER_ID = "kanu_primary_user"; 
 
 // --- Types ---
@@ -49,19 +48,18 @@ type Exercise = {
   id: string;
   name: string;
   sets: number;
-  reps: string;
-  rest: string;
+  targetReps: string;
   notes: string;
 };
 
 type WorkoutTemplate = {
   id: string;
   name: string;
-  type: 'strength' | 'yoga' | 'cardio';
+  type: 'strength' | 'functional';
   icon: React.ComponentType<LucideProps>;
   color: string;
-  duration?: number;
-  exercises?: Exercise[];
+  duration: number;
+  exercises: Exercise[];
 };
 
 type WorkoutLog = {
@@ -69,14 +67,21 @@ type WorkoutLog = {
   date: string;
   templateId: string;
   templateName: string;
-  type: 'strength' | 'yoga' | 'cardio';
+  type: string;
   duration: number;
+  performance?: Record<string, { weight: string, reps: string }>;
 };
 
 type WeightEntry = {
   id: string;
   date: string;
   weight: number;
+};
+
+type ExerciseHistory = {
+  lastWeight: string;
+  lastReps: string;
+  date: string;
 };
 
 const QUOTES = [
@@ -90,28 +95,39 @@ const QUOTES = [
 
 const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
   {
-    id: 'strength_a',
-    name: 'Upper Body Build',
+    id: 'machine_power',
+    name: 'Machine Power',
     type: 'strength',
     color: 'bg-blue-600',
     icon: Dumbbell,
+    duration: 45,
     exercises: [
-      { id: 'cp1', name: 'Chest Press', sets: 3, reps: '10-12', rest: '60s', notes: 'Focus on slow control.' },
-      { id: 'ld1', name: 'Lat Pulldown', sets: 3, reps: '10-12', rest: '60s', notes: 'Squeeze shoulder blades.' },
+      { id: 'warmup', name: 'Warmup: Walking & Dynamic Stretch', sets: 1, targetReps: '5 mins', notes: 'Get the blood flowing.' },
+      { id: 'm_chest', name: 'Chest Press Machine', sets: 3, targetReps: '10-12', notes: 'Control the eccentric.' },
+      { id: 'm_row', name: 'Seated Row Machine', sets: 3, targetReps: '10-12', notes: 'Squeeze shoulder blades.' },
+      { id: 'm_legp', name: 'Leg Press', sets: 3, targetReps: '12-15', notes: 'Feet shoulder width.' },
+      { id: 'm_lat', name: 'Lat Pulldown', sets: 3, targetReps: '10-12', notes: 'Wide grip.' },
+      { id: 'm_shld', name: 'Shoulder Press Machine', sets: 3, targetReps: '10-12', notes: 'Keep core tight.' },
+      { id: 'cool', name: 'Cool Down: Static Stretching', sets: 1, targetReps: '5 mins', notes: 'Relax the muscles.' }
     ]
   },
   {
-    id: 'strength_b',
-    name: 'Lower Body Sculpt',
-    type: 'strength',
+    id: 'functional_flow',
+    name: 'Functional Flow',
+    type: 'functional',
     color: 'bg-purple-600',
-    icon: TrendingUp,
+    icon: Activity,
+    duration: 45,
     exercises: [
-      { id: 'lp1', name: 'Leg Press', sets: 3, reps: '10-12', rest: '90s', notes: 'Drive through heels.' },
+      { id: 'warmup_f', name: 'Warmup: Mobility Drills', sets: 1, targetReps: '5 mins', notes: 'Joint circles and light movement.' },
+      { id: 'kb_swing', name: 'Kettlebell Swings', sets: 4, targetReps: '15-20', notes: 'Hinge at the hips.' },
+      { id: 'bw_squat', name: 'Goblet Squats (KB)', sets: 3, targetReps: '12-15', notes: 'Chest up, deep squat.' },
+      { id: 'kb_row', name: 'Single Arm KB Row', sets: 3, targetReps: '10/side', notes: 'Flat back.' },
+      { id: 'bw_pushup', name: 'Pushups', sets: 3, targetReps: 'Max-1', notes: 'Modify to knees if needed.' },
+      { id: 'bw_lunge', name: 'Alternating Lunges', sets: 3, targetReps: '20 total', notes: 'Steady balance.' },
+      { id: 'cool_f', name: 'Cool Down: Deep Breathing', sets: 1, targetReps: '5 mins', notes: 'Lower the heart rate.' }
     ]
-  },
-  { id: 'yoga_flow', name: 'Morning Flow', type: 'yoga', color: 'bg-rose-500', icon: Heart, duration: 25 },
-  { id: 'cardio_zone2', name: 'Zone 2 Burn', type: 'cardio', color: 'bg-orange-500', icon: Activity, duration: 30 }
+  }
 ];
 
 // --- Polished Mobile UI Components ---
@@ -119,7 +135,7 @@ const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
 const GlassCard = ({ children, className = "", onClick }: { children: React.ReactNode, className?: string, onClick?: () => void }) => (
   <div 
     onClick={onClick} 
-    className={`bg-slate-900/40 backdrop-blur-2xl rounded-[32px] shadow-2xl border border-white/10 p-6 transition-all active:scale-[0.96] touch-manipulation ${onClick ? 'cursor-pointer' : ''} ${className}`}
+    className={`bg-slate-900/40 backdrop-blur-2xl rounded-[32px] shadow-2xl border border-white/10 p-6 transition-all active:scale-[0.98] touch-manipulation ${onClick ? 'cursor-pointer' : ''} ${className}`}
   >
     {children}
   </div>
@@ -151,24 +167,19 @@ export default function App() {
   const [view, setView] = useState<'dashboard' | 'log_workout' | 'log_weight' | 'history'>('dashboard');
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
+  const [exerciseHistory, setExerciseHistory] = useState<Record<string, ExerciseHistory>>({});
   const [activeTemplate, setActiveTemplate] = useState<WorkoutTemplate | null>(null);
+  const [sessionData, setSessionData] = useState<Record<string, { weight: string, reps: string }>>({});
   const [dailyQuote, setDailyQuote] = useState("");
   const [isConnected, setIsConnected] = useState(false);
 
-  // PWA & Icon Helper
   useEffect(() => {
-    const iconUrl = "https://cdn-icons-png.flaticon.com/512/3663/3663335.png";
     const updateHead = () => {
-        document.title = "MomStrong";
+        document.title = "KanuStrong";
         let metaTheme = document.querySelector('meta[name="theme-color"]') || document.createElement('meta');
         metaTheme.setAttribute('name', 'theme-color');
         metaTheme.setAttribute('content', '#020617');
         document.head.appendChild(metaTheme);
-
-        let appleIcon = document.querySelector('link[rel="apple-touch-icon"]') || document.createElement('link');
-        appleIcon.setAttribute('rel', 'apple-touch-icon');
-        appleIcon.setAttribute('href', iconUrl);
-        document.head.appendChild(appleIcon);
     };
     updateHead();
   }, []);
@@ -184,15 +195,25 @@ export default function App() {
     if (!user) return;
     const logsQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), orderBy('date', 'desc'));
     const unsubLogs = onSnapshot(logsQuery, (snap) => {
-      setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutLog)));
-    }, (err) => console.error("Logs fetch error:", err));
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutLog));
+      setLogs(data);
+    });
 
     const weightsQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'weights'), orderBy('date', 'desc'));
     const unsubWeights = onSnapshot(weightsQuery, (snap) => {
       setWeights(snap.docs.map(d => ({ id: d.id, ...d.data() } as WeightEntry)));
-    }, (err) => console.error("Weights fetch error:", err));
+    });
 
-    return () => { unsubLogs(); unsubWeights(); };
+    const historyQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'exercise_history'));
+    const unsubHistory = onSnapshot(historyQuery, (snap) => {
+      const hist: Record<string, ExerciseHistory> = {};
+      snap.docs.forEach(d => {
+        hist[d.id] = d.data() as ExerciseHistory;
+      });
+      setExerciseHistory(hist);
+    });
+
+    return () => { unsubLogs(); unsubWeights(); unsubHistory(); };
   }, [user]);
 
   useEffect(() => {
@@ -200,12 +221,39 @@ export default function App() {
     setDailyQuote(QUOTES[day % QUOTES.length]);
   }, []);
 
+  const saveWorkout = async () => {
+    if (!activeTemplate) return;
+
+    await addDoc(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), {
+        date: new Date().toISOString(),
+        templateId: activeTemplate.id,
+        templateName: activeTemplate.name,
+        type: activeTemplate.type,
+        duration: activeTemplate.duration,
+        performance: sessionData
+    });
+
+    for (const [exId, data] of Object.entries(sessionData)) {
+        if (data.weight || data.reps) {
+            await setDoc(doc(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'exercise_history', exId), {
+                lastWeight: data.weight,
+                lastReps: data.reps,
+                date: new Date().toISOString()
+            });
+        }
+    }
+
+    setSessionData({});
+    setActiveTemplate(null);
+    setView('dashboard');
+  };
+
   const Dashboard = () => (
     <div className="space-y-8 pb-32 animate-in fade-in duration-700">
       <header className="flex justify-between items-start pt-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <h1 className="text-4xl font-black text-white tracking-tighter">MomStrong</h1>
+            <h1 className="text-4xl font-black text-white tracking-tighter">KanuStrong</h1>
             <Sparkles size={24} className="text-indigo-400 fill-indigo-400" />
           </div>
           <p className="text-slate-500 font-bold flex items-center gap-2 text-[13px] tracking-widest uppercase">
@@ -219,7 +267,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Hero Card */}
       <div className="relative overflow-hidden bg-gradient-to-br from-indigo-700 via-indigo-800 to-purple-900 rounded-[40px] p-8 text-white shadow-2xl border border-white/10">
         <div className="relative z-10 space-y-4">
           <div className="bg-white/10 w-fit p-2.5 rounded-2xl">
@@ -250,37 +297,17 @@ export default function App() {
             <Calendar size={24} />
           </div>
           <div>
-            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Session</p>
+            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] mb-1">Last Log</p>
             <p className="text-sm font-black text-white truncate tracking-tight">
-              {logs[0]?.templateName || 'Log Activity'}
+              {logs[0]?.templateName || 'No Session'}
             </p>
-          </div>
-        </GlassCard>
-      </div>
-
-      <div className="space-y-4 pt-2">
-        <div className="flex justify-between items-center px-2">
-          <h2 className="text-xl font-black text-white tracking-tight uppercase tracking-widest text-xs opacity-60">Your Streak</h2>
-        </div>
-        <GlassCard className="py-6 border-white/5">
-          <div className="flex justify-between items-center mb-4">
-             <span className="text-sm font-bold text-slate-400">Monthly Progress</span>
-             <span className="text-[10px] font-black text-indigo-400 bg-indigo-400/10 px-3 py-1 rounded-full uppercase tracking-widest">
-               {logs.length} Total
-             </span>
-          </div>
-          <div className="w-full h-3.5 bg-slate-800/50 rounded-full overflow-hidden border border-white/5">
-            <div 
-              className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-500 rounded-full shadow-[0_0_20px_rgba(99,102,241,0.5)] transition-all duration-1000 ease-out" 
-              style={{ width: `${Math.min((logs.length / 12) * 100, 100)}%` }}
-            />
           </div>
         </GlassCard>
       </div>
 
       <div className="pt-2">
         <PrimaryButton onClick={() => setView('log_workout')} icon={Plus}>
-          START SESSION
+          START 45 MIN SESSION
         </PrimaryButton>
       </div>
     </div>
@@ -288,13 +315,11 @@ export default function App() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative px-6 font-sans text-slate-200 overflow-x-hidden selection:bg-indigo-500/30 flex flex-col">
-      {/* Background Decor */}
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none -z-10">
         <div className="absolute top-[-10%] right-[-20%] w-[300px] h-[300px] bg-indigo-900/20 rounded-full blur-[120px]" />
         <div className="absolute bottom-[10%] left-[-20%] w-[300px] h-[300px] bg-purple-900/20 rounded-full blur-[120px]" />
       </div>
 
-      {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto pt-12 pb-10">
         {view === 'dashboard' && <Dashboard />}
         
@@ -303,7 +328,7 @@ export default function App() {
               <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
               <div>
                 <h2 className="text-4xl font-black text-white tracking-tighter">Workouts</h2>
-                <p className="text-slate-500 font-bold text-lg">Pick your focus</p>
+                <p className="text-slate-500 font-bold text-lg">Choose your 45-min routine</p>
               </div>
               <div className="space-y-4">
                   {WORKOUT_TEMPLATES.map(t => (
@@ -314,7 +339,10 @@ export default function App() {
                               </div>
                               <div>
                                   <h3 className="text-xl font-black text-white leading-tight tracking-tight">{t.name}</h3>
-                                  <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest mt-1 opacity-70">{t.type}</p>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <Timer size={12} className="text-slate-500" />
+                                    <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest opacity-70">{t.duration} mins</p>
+                                  </div>
                               </div>
                           </div>
                           <ChevronRight className="text-slate-700" size={24} />
@@ -325,67 +353,85 @@ export default function App() {
         )}
 
         {activeTemplate && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-12 duration-500 pb-24">
-                <div className="flex justify-between items-center">
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-12 duration-500 pb-32">
+                <div className="flex justify-between items-center bg-slate-950/80 sticky top-0 py-4 z-20 backdrop-blur-lg -mx-6 px-6">
                   <IconButton icon={ArrowLeft} onClick={() => setActiveTemplate(null)} />
                   <h2 className="font-black text-white tracking-tight text-xl">{activeTemplate.name}</h2>
                   <button 
-                    onClick={async () => {
-                        await addDoc(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), {
-                            date: new Date().toISOString(),
-                            templateId: activeTemplate.id,
-                            templateName: activeTemplate.name,
-                            type: activeTemplate.type,
-                            duration: activeTemplate.duration || 45
-                        });
-                        setActiveTemplate(null);
-                        setView('dashboard');
-                    }} 
-                    className="px-6 py-3 bg-indigo-600 text-white rounded-[20px] font-black text-sm shadow-xl active:scale-95 transition-all"
-                  >FINISH</button>
+                    onClick={saveWorkout}
+                    className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-[20px] font-black text-sm shadow-xl active:scale-95 transition-all"
+                  >
+                    <Save size={18} />
+                    DONE
+                  </button>
                 </div>
 
-                <div className="text-center space-y-4 py-6 relative">
-                    <div className="absolute inset-0 bg-indigo-500/5 blur-[100px] -z-10" />
-                    <div className={`mx-auto w-24 h-24 ${activeTemplate.color} rounded-[36px] flex items-center justify-center shadow-2xl border-4 border-white/10 text-white`}>
-                      <activeTemplate.icon size={44} />
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-indigo-400 font-black uppercase tracking-[0.3em] text-[10px]">Active Session</p>
-                      <h3 className="text-3xl font-black text-white tracking-tighter leading-none">{activeTemplate.name}</h3>
-                    </div>
-                </div>
+                <div className="space-y-6">
+                  {activeTemplate.exercises.map(ex => {
+                    const isSpecial = ex.id.includes('warmup') || ex.id.includes('cool');
+                    const history = exerciseHistory[ex.id];
+                    
+                    return (
+                      <GlassCard key={ex.id} className={`border-white/10 p-5 ${isSpecial ? 'bg-slate-800/30' : ''}`}>
+                        <div className="flex justify-between items-start mb-4">
+                          <div>
+                            <h4 className="text-xl font-black text-white tracking-tighter">{ex.name}</h4>
+                            <p className="text-[11px] text-slate-500 font-bold">{ex.notes}</p>
+                          </div>
+                          <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                            {ex.sets} Sets
+                          </div>
+                        </div>
 
-                {activeTemplate.exercises ? (
-                    <div className="space-y-4">
-                      {activeTemplate.exercises.map(ex => (
-                        <GlassCard key={ex.id} className="border-white/10 py-5">
-                          <h4 className="text-xl font-black text-white tracking-tighter mb-4">{ex.name}</h4>
-                          <div className="flex items-center justify-between px-2">
-                            <div className="space-y-1">
-                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Sets</p>
-                              <p className="text-xl font-black text-white">{ex.sets}</p>
+                        {!isSpecial && (
+                          <div className="space-y-4">
+                            <div className="flex gap-4 p-3 bg-slate-900/50 rounded-2xl border border-white/5">
+                              <div className="flex-1">
+                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Last Weight</p>
+                                <p className="text-sm font-black text-slate-300">{history?.lastWeight || '--'} lbs</p>
+                              </div>
+                              <div className="w-px h-6 bg-slate-800 self-center" />
+                              <div className="flex-1">
+                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Last Reps</p>
+                                <p className="text-sm font-black text-slate-300">{history?.lastReps || '--'}</p>
+                              </div>
                             </div>
-                            <div className="w-px h-8 bg-slate-800" />
-                            <div className="space-y-1 text-center">
-                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Target</p>
-                              <p className="text-xl font-black text-white">{ex.reps}</p>
-                            </div>
-                            <div className="w-px h-8 bg-slate-800" />
-                            <div className="space-y-1 text-right">
-                              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Rest</p>
-                              <p className="text-xl font-black text-white">{ex.rest}</p>
+
+                            <div className="flex gap-3">
+                              <div className="flex-1 space-y-1">
+                                <label className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest ml-1">Today's Lbs</label>
+                                <input 
+                                  type="number"
+                                  placeholder="0"
+                                  value={sessionData[ex.id]?.weight || ''}
+                                  onChange={(e) => setSessionData({...sessionData, [ex.id]: {...(sessionData[ex.id] || {reps: ''}), weight: e.target.value}})}
+                                  className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-3 px-4 text-white font-black text-lg focus:border-indigo-500 outline-none transition-all"
+                                />
+                              </div>
+                              <div className="flex-1 space-y-1">
+                                <label className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest ml-1">Today's Reps</label>
+                                <input 
+                                  type="number"
+                                  placeholder={ex.targetReps}
+                                  value={sessionData[ex.id]?.reps || ''}
+                                  onChange={(e) => setSessionData({...sessionData, [ex.id]: {...(sessionData[ex.id] || {weight: ''}), reps: e.target.value}})}
+                                  className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-3 px-4 text-white font-black text-lg focus:border-indigo-500 outline-none transition-all"
+                                />
+                              </div>
                             </div>
                           </div>
-                        </GlassCard>
-                      ))}
-                    </div>
-                ) : (
-                  <GlassCard className="text-center py-16">
-                     <Activity size={48} className="mx-auto text-slate-800 mb-4 opacity-40" />
-                     <p className="text-slate-400 font-black text-lg tracking-tight">Focus on your breathing.</p>
-                  </GlassCard>
-                )}
+                        )}
+
+                        {isSpecial && (
+                          <div className="flex items-center gap-3 text-indigo-400">
+                            <Timer size={18} />
+                            <span className="font-black text-sm uppercase tracking-widest">{ex.targetReps} Duration</span>
+                          </div>
+                        )}
+                      </GlassCard>
+                    );
+                  })}
+                </div>
             </div>
         )}
 
@@ -404,27 +450,35 @@ export default function App() {
                  ) : (
                    <div className="space-y-4">
                       {logs.map(log => (
-                          <GlassCard key={log.id} className="flex justify-between items-center py-6 border-white/5">
-                              <div className="flex items-center gap-5">
-                                  <div className="w-2.5 h-12 bg-gradient-to-b from-indigo-500 to-indigo-700 rounded-full shadow-[0_0_20px_rgba(79,70,229,0.4)]" />
-                                  <div>
-                                      <p className="text-lg font-black text-white tracking-tight leading-tight">{log.templateName}</p>
-                                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mt-1 opacity-60">
-                                        {new Date(log.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                                      </p>
+                          <GlassCard key={log.id} className="py-6 border-white/5 space-y-4">
+                              <div className="flex justify-between items-start">
+                                  <div className="flex items-center gap-4">
+                                      <div className="w-2.5 h-12 bg-indigo-500 rounded-full" />
+                                      <div>
+                                          <p className="text-lg font-black text-white tracking-tight leading-tight">{log.templateName}</p>
+                                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">
+                                            {new Date(log.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                                          </p>
+                                      </div>
                                   </div>
+                                  <button 
+                                    onClick={async () => { if(confirm("Delete entry?")) await deleteDoc(doc(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs', log.id)); }}
+                                    className="text-slate-800 hover:text-rose-500 p-2"
+                                  >
+                                      <Trash2 size={20}/>
+                                  </button>
                               </div>
-                              <button 
-                                onClick={async (e) => {
-                                    e.stopPropagation();
-                                    if(confirm("Permanently delete this entry?")) {
-                                      await deleteDoc(doc(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs', log.id));
-                                    }
-                                }}
-                                className="text-slate-800 hover:text-rose-500 transition-colors p-3"
-                              >
-                                  <Trash2 size={24}/>
-                              </button>
+                              
+                              {log.performance && (
+                                <div className="grid grid-cols-2 gap-2 pt-2">
+                                  {Object.entries(log.performance).slice(0, 4).map(([id, data]) => (
+                                    <div key={id} className="text-[10px] bg-slate-900/50 p-2 rounded-lg border border-white/5">
+                                      <span className="text-slate-500 block truncate">{WORKOUT_TEMPLATES.flatMap(t => t.exercises).find(e => e.id === id)?.name || id}</span>
+                                      <span className="text-indigo-400 font-bold">{data.weight}lbs x {data.reps}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                           </GlassCard>
                       ))}
                    </div>
@@ -471,13 +525,12 @@ export default function App() {
                        });
                        setView('dashboard');
                    }}>
-                     SAVE LOG
+                     SAVE WEIGHT
                    </PrimaryButton>
                  </div>
             </div>
         )}
       </div>
-      <div className="h-[env(safe-area-inset-bottom)] min-h-[20px] w-full" />
     </div>
   );
 }
