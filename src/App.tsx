@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Dumbbell, 
-  Activity, 
+  Activity,
   Scale, 
-  Calendar, 
+  TrendingUp, 
+  Calendar,  
   Plus, 
   ChevronRight, 
   Trophy,
@@ -14,9 +15,12 @@ import {
   Wifi,
   WifiOff,
   Sparkles,
-  type  LucideProps,
+  type LucideProps,
   Timer,
-  Save
+  Save,
+  Layers,
+  LineChart,
+  LayoutDashboard
 } from 'lucide-react';
 
 // Firebase Imports
@@ -62,6 +66,11 @@ type WorkoutTemplate = {
   exercises: Exercise[];
 };
 
+type SetLog = {
+  weight: string;
+  reps: string;
+};
+
 type WorkoutLog = {
   id: string;
   date: string;
@@ -69,7 +78,7 @@ type WorkoutLog = {
   templateName: string;
   type: string;
   duration: number;
-  performance?: Record<string, { weight: string, reps: string }>;
+  performance?: Record<string, SetLog[]>;
 };
 
 type WeightEntry = {
@@ -164,12 +173,12 @@ const PrimaryButton = ({ onClick, children, className = "", icon: Icon }: any) =
 
 export default function App() {
   const [user, setUser] = useState<boolean>(false);
-  const [view, setView] = useState<'dashboard' | 'log_workout' | 'log_weight' | 'history'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'log_workout' | 'log_weight' | 'history' | 'insights'>('dashboard');
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
   const [exerciseHistory, setExerciseHistory] = useState<Record<string, ExerciseHistory>>({});
   const [activeTemplate, setActiveTemplate] = useState<WorkoutTemplate | null>(null);
-  const [sessionData, setSessionData] = useState<Record<string, { weight: string, reps: string }>>({});
+  const [sessionData, setSessionData] = useState<Record<string, SetLog[]>>({});
   const [dailyQuote, setDailyQuote] = useState("");
   const [isConnected, setIsConnected] = useState(false);
 
@@ -221,6 +230,15 @@ export default function App() {
     setDailyQuote(QUOTES[day % QUOTES.length]);
   }, []);
 
+  const startWorkout = (template: WorkoutTemplate) => {
+    const initialData: Record<string, SetLog[]> = {};
+    template.exercises.forEach(ex => {
+      initialData[ex.id] = Array.from({ length: ex.sets }, () => ({ weight: '', reps: '' }));
+    });
+    setSessionData(initialData);
+    setActiveTemplate(template);
+  };
+
   const saveWorkout = async () => {
     if (!activeTemplate) return;
 
@@ -233,11 +251,12 @@ export default function App() {
         performance: sessionData
     });
 
-    for (const [exId, data] of Object.entries(sessionData)) {
-        if (data.weight || data.reps) {
+    for (const [exId, sets] of Object.entries(sessionData)) {
+        const lastPopulatedSet = [...sets].reverse().find(s => s.weight || s.reps);
+        if (lastPopulatedSet) {
             await setDoc(doc(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'exercise_history', exId), {
-                lastWeight: data.weight,
-                lastReps: data.reps,
+                lastWeight: lastPopulatedSet.weight,
+                lastReps: lastPopulatedSet.reps,
                 date: new Date().toISOString()
             });
         }
@@ -247,6 +266,27 @@ export default function App() {
     setActiveTemplate(null);
     setView('dashboard');
   };
+
+  // --- Analytical Calculations ---
+  
+  const weeklyStats = useMemo(() => {
+    const now = new Date();
+    const last30Days = logs.filter(l => {
+        const d = new Date(l.date);
+        return (now.getTime() - d.getTime()) < (30 * 24 * 60 * 60 * 1000);
+    });
+    return {
+        count: last30Days.length,
+        avgDuration: last30Days.length ? Math.round(last30Days.reduce((acc, curr) => acc + curr.duration, 0) / last30Days.length) : 0
+    };
+  }, [logs]);
+
+  const dashboardStats = [
+    { label: 'Workouts (30d)', value: weeklyStats.count, icon: Activity, color: 'text-indigo-400' },
+    { label: 'Avg Duration', value: `${weeklyStats.avgDuration}m`, icon: Timer, color: 'text-emerald-400' }
+  ];
+
+  // --- Sub-Screens ---
 
   const Dashboard = () => (
     <div className="space-y-8 pb-32 animate-in fade-in duration-700">
@@ -276,6 +316,18 @@ export default function App() {
         </div>
         <div className="absolute top-[-50%] right-[-20%] w-72 h-72 bg-white/5 rounded-full blur-[80px]" />
         <div className="absolute bottom-[-30%] left-[-10%] w-56 h-56 bg-purple-500/20 rounded-full blur-[60px]" />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {dashboardStats.map((stat, idx) => (
+          <GlassCard key={idx} className="flex flex-col gap-3 py-6">
+            <stat.icon size={20} className={stat.color} />
+            <div>
+              <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-1">{stat.label}</p>
+              <p className="text-2xl font-black text-white tracking-tight">{stat.value}</p>
+            </div>
+          </GlassCard>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -313,6 +365,74 @@ export default function App() {
     </div>
   );
 
+  const InsightsView = () => {
+    // Group logs by month for a historical perspective
+    const monthlyGroups = useMemo(() => {
+        const groups: Record<string, number> = {};
+        logs.forEach(log => {
+            const date = new Date(log.date);
+            const month = date.toLocaleString('default', { month: 'short' });
+            groups[month] = (groups[month] || 0) + 1;
+        });
+        return groups;
+    }, [logs]);
+
+    return (
+        <div className="min-h-full space-y-8 animate-in slide-in-from-right-6 duration-400 pb-32">
+            <div>
+                <h2 className="text-4xl font-black text-white tracking-tighter">Insights</h2>
+                <p className="text-slate-500 font-bold text-lg">Your growth journey</p>
+            </div>
+
+            <GlassCard className="space-y-6">
+                <div className="flex justify-between items-center">
+                    <h3 className="text-white font-black text-lg tracking-tight">Workout Consistency</h3>
+                    <TrendingUp size={18} className="text-indigo-400" />
+                </div>
+                <div className="flex items-end gap-3 h-32 pt-4">
+                    {Object.entries(monthlyGroups).reverse().slice(0, 5).map(([month, count]) => (
+                        <div key={month} className="flex-1 flex flex-col items-center gap-2 group">
+                            <div 
+                                className="w-full bg-indigo-500/20 rounded-t-lg relative flex flex-col justify-end overflow-hidden" 
+                                style={{ height: `${Math.min(100, (count / 15) * 100)}%` }}
+                            >
+                                <div className="absolute inset-0 bg-indigo-600 transition-all group-active:bg-indigo-400" />
+                            </div>
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{month}</span>
+                            <span className="text-[10px] font-black text-white">{count}</span>
+                        </div>
+                    ))}
+                    {Object.keys(monthlyGroups).length === 0 && (
+                        <div className="w-full h-full flex items-center justify-center text-slate-700 font-bold italic text-sm">
+                            More data needed for chart...
+                        </div>
+                    )}
+                </div>
+            </GlassCard>
+
+            <div className="space-y-4">
+                <h3 className="text-slate-500 font-black text-[10px] uppercase tracking-[0.3em] ml-2">Personal Records Tracking</h3>
+                {WORKOUT_TEMPLATES.flatMap(t => t.exercises).filter(e => !e.id.includes('warmup') && !e.id.includes('cool')).slice(0, 4).map(ex => {
+                    const hist = exerciseHistory[ex.id];
+                    return (
+                        <GlassCard key={ex.id} className="py-5 flex items-center justify-between">
+                            <div>
+                                <h4 className="text-white font-black tracking-tight">{ex.name}</h4>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Last Lifted</p>
+                            </div>
+                            <div className="text-right">
+                                <span className="text-xl font-black text-indigo-400">{hist?.lastWeight || '--'}</span>
+                                <span className="text-[10px] font-black text-slate-500 uppercase ml-1">lbs</span>
+                                <div className="text-[10px] font-bold text-slate-600">for {hist?.lastReps || '--'} reps</div>
+                            </div>
+                        </GlassCard>
+                    );
+                })}
+            </div>
+        </div>
+    );
+  };
+
   return (
     <div className="h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative font-sans text-slate-200 overflow-hidden selection:bg-indigo-500/30 flex flex-col">
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none -z-10">
@@ -322,6 +442,7 @@ export default function App() {
 
       <div className="flex-1 overflow-y-auto pt-12 pb-10 px-6">
         {view === 'dashboard' && <Dashboard />}
+        {view === 'insights' && <InsightsView />}
         
         {view === 'log_workout' && !activeTemplate && (
           <div className="min-h-full space-y-8 animate-in slide-in-from-left-6 duration-400 pb-20">
@@ -332,7 +453,7 @@ export default function App() {
               </div>
               <div className="space-y-4">
                   {WORKOUT_TEMPLATES.map(t => (
-                      <GlassCard key={t.id} onClick={() => setActiveTemplate(t)} className="flex items-center justify-between py-6 border-white/5">
+                      <GlassCard key={t.id} onClick={() => startWorkout(t)} className="flex items-center justify-between py-6 border-white/5">
                           <div className="flex items-center gap-5">
                               <div className={`p-4 ${t.color} rounded-[24px] shadow-xl text-white`}>
                                   <t.icon size={28} />
@@ -370,6 +491,7 @@ export default function App() {
                   {activeTemplate.exercises.map(ex => {
                     const isSpecial = ex.id.includes('warmup') || ex.id.includes('cool');
                     const history = exerciseHistory[ex.id];
+                    const currentExerciseData = sessionData[ex.id] || [];
                     
                     return (
                       <GlassCard key={ex.id} className={`border-white/10 p-5 ${isSpecial ? 'bg-slate-800/30' : ''}`}>
@@ -378,46 +500,55 @@ export default function App() {
                             <h4 className="text-xl font-black text-white tracking-tighter">{ex.name}</h4>
                             <p className="text-[11px] text-slate-500 font-bold">{ex.notes}</p>
                           </div>
-                          <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
+                          <div className="bg-indigo-500/10 text-indigo-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
+                            <Layers size={10} />
                             {ex.sets} Sets
                           </div>
                         </div>
 
                         {!isSpecial && (
-                          <div className="space-y-4">
+                          <div className="space-y-6">
                             <div className="flex gap-4 p-3 bg-slate-900/50 rounded-2xl border border-white/5">
                               <div className="flex-1">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Last Weight</p>
-                                <p className="text-sm font-black text-slate-300">{history?.lastWeight || '--'} lbs</p>
-                              </div>
-                              <div className="w-px h-6 bg-slate-800 self-center" />
-                              <div className="flex-1">
-                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Last Reps</p>
-                                <p className="text-sm font-black text-slate-300">{history?.lastReps || '--'}</p>
+                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Last Performance</p>
+                                <p className="text-sm font-black text-slate-300">{history?.lastWeight || '--'} lbs x {history?.lastReps || '--'}</p>
                               </div>
                             </div>
 
-                            <div className="flex gap-3">
-                              <div className="flex-1 space-y-1">
-                                <label className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest ml-1">Today's Lbs</label>
-                                <input 
-                                  type="number"
-                                  placeholder="0"
-                                  value={sessionData[ex.id]?.weight || ''}
-                                  onChange={(e) => setSessionData({...sessionData, [ex.id]: {...(sessionData[ex.id] || {reps: ''}), weight: e.target.value}})}
-                                  className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-3 px-4 text-white font-black text-lg focus:border-indigo-500 outline-none transition-all"
-                                />
-                              </div>
-                              <div className="flex-1 space-y-1">
-                                <label className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest ml-1">Today's Reps</label>
-                                <input 
-                                  type="number"
-                                  placeholder={ex.targetReps}
-                                  value={sessionData[ex.id]?.reps || ''}
-                                  onChange={(e) => setSessionData({...sessionData, [ex.id]: {...(sessionData[ex.id] || {weight: ''}), reps: e.target.value}})}
-                                  className="w-full bg-slate-800/50 border border-white/10 rounded-2xl py-3 px-4 text-white font-black text-lg focus:border-indigo-500 outline-none transition-all"
-                                />
-                              </div>
+                            <div className="space-y-4">
+                              {currentExerciseData.map((set, setIdx) => (
+                                <div key={setIdx} className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/5 flex items-center justify-center text-[10px] font-black text-slate-500 shrink-0">
+                                    {setIdx + 1}
+                                  </div>
+                                  <div className="flex-1">
+                                    <input 
+                                      type="number"
+                                      placeholder="lbs"
+                                      value={set.weight}
+                                      onChange={(e) => {
+                                        const newData = [...currentExerciseData];
+                                        newData[setIdx] = { ...newData[setIdx], weight: e.target.value };
+                                        setSessionData({ ...sessionData, [ex.id]: newData });
+                                      }}
+                                      className="w-full bg-slate-800/50 border border-white/10 rounded-xl py-2 px-3 text-white font-black text-center focus:border-indigo-500 outline-none transition-all"
+                                    />
+                                  </div>
+                                  <div className="flex-1">
+                                    <input 
+                                      type="number"
+                                      placeholder="reps"
+                                      value={set.reps}
+                                      onChange={(e) => {
+                                        const newData = [...currentExerciseData];
+                                        newData[setIdx] = { ...newData[setIdx], reps: e.target.value };
+                                        setSessionData({ ...sessionData, [ex.id]: newData });
+                                      }}
+                                      className="w-full bg-slate-800/50 border border-white/10 rounded-xl py-2 px-3 text-white font-black text-center focus:border-indigo-500 outline-none transition-all"
+                                    />
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         )}
@@ -437,7 +568,6 @@ export default function App() {
 
         {view === 'history' && (
             <div className="min-h-full space-y-8 animate-in slide-in-from-right-6 duration-400 pb-32">
-                 <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
                  <h2 className="text-4xl font-black text-white tracking-tighter">Journal</h2>
                  
                  {logs.length === 0 ? (
@@ -470,13 +600,25 @@ export default function App() {
                               </div>
                               
                               {log.performance && (
-                                <div className="grid grid-cols-2 gap-2 pt-2">
-                                  {Object.entries(log.performance).slice(0, 4).map(([id, data]) => (
-                                    <div key={id} className="text-[10px] bg-slate-900/50 p-2 rounded-lg border border-white/5">
-                                      <span className="text-slate-500 block truncate">{WORKOUT_TEMPLATES.flatMap(t => t.exercises).find(e => e.id === id)?.name || id}</span>
-                                      <span className="text-indigo-400 font-bold">{data.weight}lbs x {data.reps}</span>
-                                    </div>
-                                  ))}
+                                <div className="space-y-2 pt-2">
+                                  {Object.entries(log.performance).slice(0, 3).map(([id, sets]) => {
+                                    const exName = WORKOUT_TEMPLATES.flatMap(t => t.exercises).find(e => e.id === id)?.name || id;
+                                    const populatedSets = sets.filter(s => s.weight || s.reps);
+                                    if (populatedSets.length === 0) return null;
+
+                                    return (
+                                      <div key={id} className="text-[10px] bg-slate-900/50 p-3 rounded-xl border border-white/5">
+                                        <span className="text-slate-500 block truncate font-black mb-1">{exName}</span>
+                                        <div className="flex flex-wrap gap-2">
+                                          {populatedSets.map((s, idx) => (
+                                            <span key={idx} className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-md font-bold">
+                                              {s.weight}x{s.reps}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                           </GlassCard>
@@ -531,6 +673,33 @@ export default function App() {
             </div>
         )}
       </div>
+
+      {/* Persistent Bottom Navigation */}
+      {!activeTemplate && (
+          <nav className="fixed bottom-0 left-0 w-full bg-slate-950/80 backdrop-blur-2xl border-t border-white/5 py-6 px-10 flex justify-between items-center z-50">
+              <button 
+                onClick={() => setView('dashboard')}
+                className={`flex flex-col items-center gap-1.5 transition-all ${view === 'dashboard' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+              >
+                  <LayoutDashboard size={22} />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Home</span>
+              </button>
+              <button 
+                onClick={() => setView('insights')}
+                className={`flex flex-col items-center gap-1.5 transition-all ${view === 'insights' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+              >
+                  <LineChart size={22} />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Insights</span>
+              </button>
+              <button 
+                onClick={() => setView('history')}
+                className={`flex flex-col items-center gap-1.5 transition-all ${view === 'history' ? 'text-indigo-400 scale-110' : 'text-slate-600'}`}
+              >
+                  <History size={22} />
+                  <span className="text-[9px] font-black uppercase tracking-widest">Journal</span>
+              </button>
+          </nav>
+      )}
     </div>
   );
 }
