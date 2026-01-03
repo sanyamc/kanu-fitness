@@ -16,7 +16,8 @@ import {
   Quote,
   Wifi,
   WifiOff,
-  Sparkles
+  Sparkles,
+  type LucideProps
 } from 'lucide-react';
 
 // Firebase Imports
@@ -55,7 +56,8 @@ type WorkoutTemplate = {
   id: string;
   name: string;
   type: 'strength' | 'yoga' | 'cardio';
-  icon: React.ReactNode;
+  // Use React.ComponentType for cleaner icon cloning/rendering
+  icon: React.ComponentType<LucideProps>;
   color: string;
   duration?: number;
   exercises?: Exercise[];
@@ -90,7 +92,7 @@ const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
     name: 'Upper Body Build',
     type: 'strength',
     color: 'bg-blue-500',
-    icon: <Dumbbell size={22} className="text-white" />,
+    icon: Dumbbell,
     exercises: [
       { id: 'cp1', name: 'Chest Press', sets: 3, reps: '10-12', rest: '60s', notes: 'Focus on slow control.' },
       { id: 'ld1', name: 'Lat Pulldown', sets: 3, reps: '10-12', rest: '60s', notes: 'Squeeze shoulder blades.' },
@@ -101,13 +103,13 @@ const WORKOUT_TEMPLATES: WorkoutTemplate[] = [
     name: 'Lower Body Sculpt',
     type: 'strength',
     color: 'bg-purple-500',
-    icon: <TrendingUp size={22} className="text-white" />,
+    icon: TrendingUp,
     exercises: [
       { id: 'lp1', name: 'Leg Press', sets: 3, reps: '10-12', rest: '90s', notes: 'Drive through heels.' },
     ]
   },
-  { id: 'yoga_flow', name: 'Morning Flow', type: 'yoga', color: 'bg-rose-400', icon: <Heart size={22} className="text-white" />, duration: 25 },
-  { id: 'cardio_zone2', name: 'Zone 2 Burn', type: 'cardio', color: 'bg-orange-500', icon: <Activity size={22} className="text-white" />, duration: 30 }
+  { id: 'yoga_flow', name: 'Morning Flow', type: 'yoga', color: 'bg-rose-400', icon: Heart, duration: 25 },
+  { id: 'cardio_zone2', name: 'Zone 2 Burn', type: 'cardio', color: 'bg-orange-500', icon: Activity, duration: 30 }
 ];
 
 // --- Optimized Mobile UI Components ---
@@ -286,8 +288,8 @@ export default function App() {
                 {WORKOUT_TEMPLATES.map(t => (
                     <GlassCard key={t.id} onClick={() => setActiveTemplate(t)} className="flex items-center justify-between py-6 border-white/10 active:bg-slate-800">
                         <div className="flex items-center gap-5">
-                            <div className={`p-4 ${t.color} rounded-[20px] shadow-2xl shadow-black/40`}>
-                                {React.cloneElement(t.icon as React.ReactElement, { size: 28 })}
+                            <div className={`p-4 ${t.color} rounded-[20px] shadow-2xl shadow-black/40 text-white`}>
+                                <t.icon size={28} />
                             </div>
                             <div>
                                 <h3 className="text-lg font-black text-white leading-tight">{t.name}</h3>
@@ -324,8 +326,8 @@ export default function App() {
               </div>
 
               <div className="text-center space-y-6 py-10">
-                  <div className={`mx-auto w-32 h-32 ${activeTemplate.color} rounded-[40px] flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.5)] border-4 border-white/10`}>
-                    {React.cloneElement(activeTemplate.icon as React.ReactElement, { size: 56 })}
+                  <div className={`mx-auto w-32 h-32 ${activeTemplate.color} rounded-[40px] flex items-center justify-center shadow-[0_20px_60px_rgba(0,0,0,0.5)] border-4 border-white/10 text-white`}>
+                    <activeTemplate.icon size={56} />
                   </div>
                   <div className="space-y-2">
                     <p className="text-indigo-400 font-black uppercase tracking-[0.25em] text-[10px]">Session in progress</p>
