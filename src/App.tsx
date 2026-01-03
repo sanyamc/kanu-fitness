@@ -14,7 +14,7 @@ import {
   Wifi,
   WifiOff,
   Sparkles,
-  type LucideProps,
+  type  LucideProps,
   Timer,
   Save
 } from 'lucide-react';
@@ -314,17 +314,17 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative px-6 font-sans text-slate-200 overflow-x-hidden selection:bg-indigo-500/30 flex flex-col">
+    <div className="h-[100dvh] w-full bg-slate-950 max-w-lg mx-auto relative font-sans text-slate-200 overflow-hidden selection:bg-indigo-500/30 flex flex-col">
       <div className="fixed top-0 left-0 w-full h-full pointer-events-none -z-10">
         <div className="absolute top-[-10%] right-[-20%] w-[300px] h-[300px] bg-indigo-900/20 rounded-full blur-[120px]" />
         <div className="absolute bottom-[10%] left-[-20%] w-[300px] h-[300px] bg-purple-900/20 rounded-full blur-[120px]" />
       </div>
 
-      <div className="flex-1 overflow-y-auto pt-12 pb-10">
+      <div className="flex-1 overflow-y-auto pt-12 pb-10 px-6">
         {view === 'dashboard' && <Dashboard />}
         
         {view === 'log_workout' && !activeTemplate && (
-          <div className="space-y-8 animate-in slide-in-from-left-6 duration-400 pb-20">
+          <div className="min-h-full space-y-8 animate-in slide-in-from-left-6 duration-400 pb-20">
               <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
               <div>
                 <h2 className="text-4xl font-black text-white tracking-tighter">Workouts</h2>
@@ -353,7 +353,7 @@ export default function App() {
         )}
 
         {activeTemplate && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-12 duration-500 pb-32">
+            <div className="min-h-full space-y-6 animate-in fade-in slide-in-from-bottom-12 duration-500 pb-32">
                 <div className="flex justify-between items-center bg-slate-950/80 sticky top-0 py-4 z-20 backdrop-blur-lg -mx-6 px-6">
                   <IconButton icon={ArrowLeft} onClick={() => setActiveTemplate(null)} />
                   <h2 className="font-black text-white tracking-tight text-xl">{activeTemplate.name}</h2>
@@ -436,13 +436,13 @@ export default function App() {
         )}
 
         {view === 'history' && (
-            <div className="space-y-8 animate-in slide-in-from-right-6 duration-400 pb-20">
+            <div className="min-h-full space-y-8 animate-in slide-in-from-right-6 duration-400 pb-32">
                  <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
                  <h2 className="text-4xl font-black text-white tracking-tighter">Journal</h2>
                  
                  {logs.length === 0 ? (
-                   <div className="py-24 text-center space-y-6">
-                     <div className="w-24 h-24 bg-slate-900 rounded-[40px] flex items-center justify-center mx-auto text-slate-800 border border-white/5">
+                   <div className="flex flex-col items-center justify-center py-24 space-y-6">
+                     <div className="w-24 h-24 bg-slate-900 rounded-[40px] flex items-center justify-center text-slate-800 border border-white/5">
                        <History size={48} />
                      </div>
                      <p className="text-slate-600 font-black text-xl">The journal is empty.</p>
@@ -487,7 +487,7 @@ export default function App() {
         )}
 
         {view === 'log_weight' && (
-            <div className="space-y-16 pt-4 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-400 h-full">
+            <div className="min-h-full space-y-16 pt-4 flex flex-col items-center animate-in slide-in-from-bottom-10 duration-400 pb-10">
                  <div className="w-full flex justify-start">
                   <IconButton icon={ArrowLeft} onClick={() => setView('dashboard')} />
                  </div>
@@ -515,7 +515,7 @@ export default function App() {
                     </div>
                  </div>
 
-                 <div className="w-full mt-auto pb-10">
+                 <div className="w-full mt-auto">
                    <PrimaryButton onClick={async () => {
                        const val = (document.getElementById('weight-input') as HTMLInputElement).value;
                        if (!val) return;
