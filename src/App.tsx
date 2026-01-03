@@ -40,6 +40,10 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = "kanu-fit-v1"; 
 
+// CRITICAL: Fixed User ID to ensure data persistence across sessions/deployments
+// Since this is for one user only, we use a constant string to map all data.
+const FIXED_USER_ID = "kanu_primary_user"; 
+
 // --- Types ---
 
 type Exercise = {
@@ -78,7 +82,8 @@ type WeightEntry = {
 
 const QUOTES = [
     "Self-care is not selfish. You cannot serve from an empty vessel.",
-    "Strong Mom, strong family.",
+    "Strong Kanu, strong family.",
+    "Strong Dodu means Strong Kavi and Strong Sanyam",
     "Do something today that your future self will thank you for.",
     "You are doing a great job, Kanu!",
     "You are getting strong, Dodu!",
@@ -143,7 +148,7 @@ const PrimaryButton = ({ onClick, children, className = "", icon: Icon }: any) =
 // --- Main App ---
 
 export default function App() {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<boolean>(false);
   const [view, setView] = useState<'dashboard' | 'log_workout' | 'log_weight' | 'history'>('dashboard');
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [weights, setWeights] = useState<WeightEntry[]>([]);
@@ -151,27 +156,45 @@ export default function App() {
   const [dailyQuote, setDailyQuote] = useState("");
   const [isConnected, setIsConnected] = useState(false);
 
+  // PWA & Icon Helper
   useEffect(() => {
-    signInAnonymously(auth).catch(console.error);
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-        setUser(u);
-        setIsConnected(!!u);
-    });
-    return () => unsubscribe();
+    const iconUrl = "https://cdn-icons-png.flaticon.com/512/3663/3663335.png";
+    const updateHead = () => {
+        document.title = "MomStrong";
+        let metaTheme = document.querySelector('meta[name="theme-color"]') || document.createElement('meta');
+        metaTheme.setAttribute('name', 'theme-color');
+        metaTheme.setAttribute('content', '#020617');
+        document.head.appendChild(metaTheme);
+
+        let appleIcon = document.querySelector('link[rel="apple-touch-icon"]') || document.createElement('link');
+        appleIcon.setAttribute('rel', 'apple-touch-icon');
+        appleIcon.setAttribute('href', iconUrl);
+        document.head.appendChild(appleIcon);
+    };
+    updateHead();
+  }, []);
+
+  useEffect(() => {
+    // We sign in anonymously to satisfy security rules, but use a fixed path for storage
+    signInAnonymously(auth).then(() => {
+        setIsConnected(true);
+        setUser(true);
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
     if (!user) return;
     
-    const logsQuery = query(collection(db, 'artifacts', appId, 'users', user.uid, 'logs'), orderBy('date', 'desc'));
+    // FETCH DATA: Using FIXED_USER_ID ensures that "Kanu" sees the same data everywhere.
+    const logsQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), orderBy('date', 'desc'));
     const unsubLogs = onSnapshot(logsQuery, (snap) => {
       setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() } as WorkoutLog)));
-    });
+    }, (err) => console.error("Logs fetch error:", err));
 
-    const weightsQuery = query(collection(db, 'artifacts', appId, 'users', user.uid, 'weights'), orderBy('date', 'desc'));
+    const weightsQuery = query(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'weights'), orderBy('date', 'desc'));
     const unsubWeights = onSnapshot(weightsQuery, (snap) => {
       setWeights(snap.docs.map(d => ({ id: d.id, ...d.data() } as WeightEntry)));
-    });
+    }, (err) => console.error("Weights fetch error:", err));
 
     return () => { unsubLogs(); unsubWeights(); };
   }, [user]);
@@ -275,7 +298,7 @@ export default function App() {
         <div className="absolute bottom-[10%] left-[-20%] w-[300px] h-[300px] bg-purple-900/20 rounded-full blur-[120px]" />
       </div>
 
-      {/* Main Content Area with Safe-Top-Notch Padding */}
+      {/* Main Content Area */}
       <div className="pt-12 pb-10">
         {view === 'dashboard' && <Dashboard />}
         
@@ -312,8 +335,7 @@ export default function App() {
                   <h2 className="font-black text-white tracking-tight text-xl">{activeTemplate.name}</h2>
                   <button 
                     onClick={async () => {
-                        if (!user) return;
-                        await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'logs'), {
+                        await addDoc(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs'), {
                             date: new Date().toISOString(),
                             templateId: activeTemplate.id,
                             templateName: activeTemplate.name,
@@ -400,7 +422,7 @@ export default function App() {
                                 onClick={async (e) => {
                                     e.stopPropagation();
                                     if(confirm("Permanently delete this entry?")) {
-                                      await deleteDoc(doc(db, 'artifacts', appId, 'users', user?.uid || '', 'logs', log.id));
+                                      await deleteDoc(doc(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'logs', log.id));
                                     }
                                 }}
                                 className="text-slate-800 hover:text-rose-500 transition-colors p-3"
@@ -446,8 +468,8 @@ export default function App() {
                  <div className="w-full mt-auto pb-safe">
                    <PrimaryButton onClick={async () => {
                        const val = (document.getElementById('weight-input') as HTMLInputElement).value;
-                       if (!user || !val) return;
-                       await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'weights'), {
+                       if (!val) return;
+                       await addDoc(collection(db, 'artifacts', appId, 'users', FIXED_USER_ID, 'weights'), {
                            date: new Date().toISOString(),
                            weight: parseFloat(val)
                        });
@@ -459,8 +481,6 @@ export default function App() {
             </div>
         )}
       </div>
-      
-      {/* Bottom Safe Area Padding */}
       <div className="h-[env(safe-area-inset-bottom)] w-full" />
     </div>
   );
